@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+  <script src="./js/loading.js"></script>
+  <title>大文件切片断点续传</title>
+</head>
+
+<body>
+  <h2>大文件切片上传</h2>
+  <input type="file" id="fileInput">
+  <button id="upload_btn">上传</button>
+  <div id="loading" style="display:none;">
+    <div class="loading-overlay" ></div>
+    <div class="loading-spinner">
+      <i></i>
+      <span>Loading...</span>
+    </div>
+  </div>
+
+
+  <script type="module">
+
+    import { cutFile } from './js/cutfile.js';
+
+    function initiateMerge(fileName, chunks) {
+      const isAllUploaded = chunks.every(({isUploaded}) => isUploaded);
+      if (isAllUploaded) {
+        mergeChunks(fileName, chunks.length)
+        return true
+      };
+      return false
+
+    };
+    
+    // 获取已经上传的文件片段
+    function getUploadedChunks(fileName) {
+      showLoading('正在获取已上传切片')
+      return fetch(`/file/getUploadedChunks?fileName=${fileName}`)
+        .then(response => response.json())
+        .finally(() => hideLoading())
+    };
+
+    document.querySelector('#upload_btn').addEventListener('click', uploadFile)
+
+    // 选择文件，依据已上传列表确定新的要上传的切片
+    async function uploadFile() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+      if (!file) {
+        showLoading('请选择一个文件', 2000)
+        return;
+      };
+      
+      const uploadedChunks = await getUploadedChunks(file.name);
+
+      showLoading('正在切片，并使用worker线程完成MD5值计算');
+
+      const chunks = await cutFile(file, uploadedChunks);
+
+      hideLoading();
+
+      const isMerged = initiateMerge(file.name, chunks);
+
+      if (isMerged) return;
+      
+      showLoading('正在上传切片文件');
+      for (let i = 0; i < chunks.length; i++) {
+
+        const { chunkIndex, chunkHash, chunkBlob, isUploaded } = chunks[i];
+
+        if (isUploaded) {
+          continue;
+        }
+
+        await uploadChunk(chunkBlob, file.name, chunkIndex, chunks, chunkHash);
+      };
+    }
+    // 上传切片
+    function uploadChunk(fileChunk, fileName, chunkIndex, chunks, chunkHash) {
+      const formData = new FormData();
+      formData.append('chunk', fileChunk);
+      formData.append('fileName', fileName);
+      formData.append('chunkIndex', chunkIndex);
+      formData.append('totalChunks', chunks.length);
+      formData.append('chunkHash', chunkHash);
+
+      return fetch('/file/upload', {
+        method: 'POST',
+        body: formData,
+      }).then(response => {
+        if (!response.ok) {
+          showLoading(`切片 ${chunkIndex} 上传失败`, 2000);
+          return
+        };
+
+        chunks[chunkIndex].isUploaded = true;
+
+        initiateMerge(fileName, chunks)
+
+      });
+    }
+
+    function mergeChunks(fileName, totalChunks) {
+      showLoading('分片文件上传完成，正在合并文件')
+      return fetch('/file/merge', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          fileName: fileName,
+          totalChunks: totalChunks
+        })
+      }).then(response => {
+        if (!response.ok) return;
+        showLoading('文件合并完成', 3000, () => {
+          showLoading('文件上传完成', 3000)
+        })
+      })
+      .catch(error => {
+        showLoading('文件合并失败', JSON.stringify(error), 3000)
+      })
+
+    }
+  </script>
+</body>
+
+</html>
