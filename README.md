@@ -36,8 +36,14 @@ git clone https://github.com/your-username/break-resumer.git
 cd break-resumer
 
 npm install
+or
+yarn
+
 
 npm start
+or
+yarn start
+
 ```
 
 ## The server will be running at http://localhost:3000
