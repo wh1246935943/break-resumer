@@ -10,10 +10,12 @@ onmessage = async (e) => {
 
     // 如果已经上传过这个切片，则跳过
     if (uploadedChunkIndexs.includes(i)) {
+
       result.push({
         chunkIndex: i,
         isUploaded: true
-      })
+      });
+
       continue
     };
     

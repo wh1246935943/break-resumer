@@ -24,36 +24,51 @@
 
 
   <script type="module">
+    document.querySelector('#upload_btn').addEventListener('click', uploadFile);
 
     import { cutFile } from './js/cutfile.js';
+    // 发起合并
+    function startMerge(fileName, chunks) {
 
-    function initiateMerge(fileName, chunks) {
       const isAllUploaded = chunks.every(({isUploaded}) => isUploaded);
+
       if (isAllUploaded) {
+
         mergeChunks(fileName, chunks.length)
-        return true
+        
+        return true;
       };
-      return false
+
+      return false;
 
     };
     
     // 获取已经上传的文件片段
     function getUploadedChunks(fileName) {
+
       showLoading('正在获取已上传切片')
+
       return fetch(`/file/getUploadedChunks?fileName=${fileName}`)
+
         .then(response => response.json())
+
         .finally(() => hideLoading())
     };
 
-    document.querySelector('#upload_btn').addEventListener('click', uploadFile)
 
     // 选择文件，依据已上传列表确定新的要上传的切片
     async function uploadFile() {
+
       const fileInput = document.getElementById('fileInput');
+
       const file = fileInput.files[0];
+
       if (!file) {
+
         showLoading('请选择一个文件', 2000)
+
         return;
+
       };
       
       const uploadedChunks = await getUploadedChunks(file.name);
@@ -64,7 +79,7 @@
 
       hideLoading();
 
-      const isMerged = initiateMerge(file.name, chunks);
+      const isMerged = startMerge(file.name, chunks);
 
       if (isMerged) return;
       
@@ -73,15 +88,15 @@
 
         const { chunkIndex, chunkHash, chunkBlob, isUploaded } = chunks[i];
 
-        if (isUploaded) {
-          continue;
-        }
+        if (isUploaded) continue;
 
         await uploadChunk(chunkBlob, file.name, chunkIndex, chunks, chunkHash);
+
       };
     }
     // 上传切片
     function uploadChunk(fileChunk, fileName, chunkIndex, chunks, chunkHash) {
+      
       const formData = new FormData();
       formData.append('chunk', fileChunk);
       formData.append('fileName', fileName);
@@ -93,20 +108,26 @@
         method: 'POST',
         body: formData,
       }).then(response => {
+
         if (!response.ok) {
+
           showLoading(`切片 ${chunkIndex} 上传失败`, 2000);
+
           return
+
         };
 
         chunks[chunkIndex].isUploaded = true;
 
-        initiateMerge(fileName, chunks)
+        startMerge(fileName, chunks)
 
       });
     }
 
     function mergeChunks(fileName, totalChunks) {
-      showLoading('分片文件上传完成，正在合并文件')
+
+      showLoading('分片文件上传完成，正在合并文件');
+
       return fetch('/file/merge', {
         method: 'POST',
         headers: {
@@ -117,13 +138,20 @@
           totalChunks: totalChunks
         })
       }).then(response => {
+
         if (!response.ok) return;
+
         showLoading('文件合并完成', 3000, () => {
+
           showLoading('文件上传完成', 3000)
+
         })
+
       })
       .catch(error => {
+
         showLoading('文件合并失败', JSON.stringify(error), 3000)
+        
       })
 
     }
