@@ -146,13 +146,7 @@
 
     prossList[fileIndex].style.width = `${percentage}%`;
 
-    console.log('isMerge:::', isMerge)
-
-    // if (!isMerge) return;
-
     const isAllUploaded = chunks.every(({isUploaded}) => isUploaded);
-
-    console.log('isAllUploaded:::', isAllUploaded)
 
     if (isAllUploaded) mergeChunks(filename)
   };
@@ -167,8 +161,10 @@
       body: JSON.stringify({filename})
     });
 
+    const data = await res.json();
+
     if (!res.ok) {
-      showLoading('文件合并失败了', 2000)
+      showLoading(data.msg, 2000)
       return;
     };
 

@@ -2,6 +2,8 @@ const express = require('express');
 
 const multer = require('multer');
 
+const fsPromises = require('fs').promises;
+
 const path = require('path');
 
 const fs = require('fs');
@@ -21,13 +23,13 @@ const uploadFileStorage = multer.diskStorage({
 
     const filename = req.body.filename || 'default';
 
-    const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+    const chunkMulterDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_MULTER_FOLDER_MARK_`);
 
-    fs.mkdir(chunkDir, { recursive: true }, (err) => {
+    fs.mkdir(chunkMulterDir, { recursive: true }, (err) => {
 
       if (err) return cb(err);
 
-      cb(null, chunkDir);
+      cb(null, chunkMulterDir);
 
     });
 
@@ -69,53 +71,79 @@ router.get('/getUploadedChunks', (req, res) => {
 
 router.post('/upload', uploadFileMulter.single('chunkBlob'), (req, res) => {
 
-  res.sendStatus(200)
+  const { filename, chunkIndex } = req.body;
+
+  const multerChunk = req.file;
+
+  const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+
+  // 如果没有目录，则创建一个
+  fs.mkdir(chunkDir, { recursive: true }, (err) => {
+
+    if (err) return;
+
+    fs.rename(multerChunk.path, path.join(chunkDir, `chunk_${chunkIndex}`), () => {
+
+      res.sendStatus(200)
+
+    });
+  })
 
 });
 
-router.post('/merge', (req, res) => {
+router.post('/merge', async (req, res) => {
 
   const { filename } = req.body;
 
   const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+  const chunkMulterDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_MULTER_FOLDER_MARK_`);
 
-  fs.readdir(chunkDir, (err, files) => {
+  try {
+    // 读取chunk目录下的文件列表
+    const files = await fsPromises.readdir(chunkDir);
 
-    if (err) {
+    const indexsSort = files
+      .map(name => parseInt(name.split('_')[1]))
+      .sort((a, b) => a - b);
 
-      res.sendStatus(400).json({msg: '要合并的文件不存再'});
+    const uniqueFilename = getUnqieFilename(UPLOAD_DIR, filename);
 
-      return;
+    const writeStream = fs.createWriteStream(path.join(UPLOAD_DIR, uniqueFilename));
 
-    };
+    for (let i = 0; i < indexsSort.length; i++) {
+      const chunkPath = path.join(chunkDir, `chunk_${indexsSort[i]}`);
 
-    const indexs = files.map(name => parseInt(name.split('_')[1]));
+      // 异步读取文件
+      const chunk = await fsPromises.readFile(chunkPath);
 
-    const indexsSort = indexs.sort((a,b) => a - b);
-  
-    const unqieFilename = getUnqieFilename(UPLOAD_DIR, filename);
-  
-    const writeStream = fs.createWriteStream(path.join(UPLOAD_DIR, unqieFilename));
-  
-    for (let index = 0; index < indexsSort.length; index++) {
-      
-      const chunkPath = path.join(chunkDir, `chunk_${index}`);
-  
-      const chunk = fs.readFileSync(chunkPath);
-  
-      writeStream.write(chunk);
-      
-    };
-  
-    writeStream.end();
-  
-    rimraf(chunkDir, { glob: false }).catch(err => {console.log('err:::', err)});
-  
-    res.sendStatus(200)
+      // 异步写入文件
+      await new Promise((resolve, reject) => {
+        writeStream.write(chunk, err => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
 
-  });
+    // 确保所有数据写入完成
+    await new Promise((resolve, reject) => {
+      writeStream.end(err => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
 
-})
+    // 删除目录及其内容
+    await rimraf(chunkDir, { glob: false });
+    await rimraf(chunkMulterDir, { glob: false });
+
+    res.sendStatus(200);
+
+  } catch (err) {
+    res.status(500).json({ msg: '合并文件时出错', error: err.message });
+  }
+});
+
 
 
 module.exports = router;
