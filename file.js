@@ -1,107 +1,121 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
-/**
- * multer 是一个用于处理 multipart/form-data 类型的表单数据的中间件，
- * 特别是在处理文件上传时非常有用。
- * 通过这个语句，可以在后续的代码中使用 multer 模块提供的功能，
- * 例如创建上传表单、处理上传请求、管理文件存储路径等。
- */
+
 const multer = require('multer');
-/**
- * 这个语句导入了一个名为 getUniqueFileName 的函数，
- * 用于生成一个唯一的文件名。
- * 这个函数接受两个参数：上传文件的目录和文件名。
- * 它会生成一个唯一的文件名，
- * 保证在给定的目录下不会出现重复的文件名。
- */
-const { getUniqueFileName } = require('./util');
+
+const path = require('path');
+
+const fs = require('fs');
+
+const { rimraf } = require('rimraf');
+
+const { getUnqieFilename } = require('./utils');
 
 const router = express.Router();
-/**
- * dest: 'uploads/' 指定了上传文件存储的目录为当前目录下的 uploads 文件夹。
- */
-const upload = multer({ dest: 'uploads/' });
 
-// 上传文件的目录
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
-// 获取已上传的切片
+// 设置 multer 存储配置
+const uploadFileStorage = multer.diskStorage({
+  // 动态设置文件保存路径
+  destination: (req, file, cb) => {
+
+    const filename = req.body.filename || 'default';
+
+    const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+
+    fs.mkdir(chunkDir, { recursive: true }, (err) => {
+
+      if (err) return cb(err);
+
+      cb(null, chunkDir);
+
+    });
+
+  },
+
+  // 设置保存的文件名
+  filename: (req, file, cb) => {
+
+    const chunkIndex = req.body.chunkIndex || 0;
+
+    // 自定义文件名，例如使用原文件名
+    cb(null, `chunk_${chunkIndex}`);
+  }
+});
+
+const uploadFileMulter = multer({ storage: uploadFileStorage });
+
 router.get('/getUploadedChunks', (req, res) => {
 
-  const { fileName } = req.query;
+  const { filename } = req.query;
 
-  const chunkDir = path.join(UPLOAD_DIR, `${fileName}_CHUNKS_FOLDER_MARK_`);
+  const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
 
-  let uploadedChunks = [];
+  fs.readdir(chunkDir, (err, files) => {
 
-  if (fs.existsSync(chunkDir)) {
+    if (err) {
 
-    // 检查路径是否是一个文件夹
-    if (fs.statSync(chunkDir).isDirectory()) {
+      res.json([])
 
-      uploadedChunks = fs.readdirSync(chunkDir).map(name => parseInt(name.split('_')[1]));
+    } else {
+
+      res.json(files.map(name => parseInt(name.split('_')[1])))
 
     }
 
-  }
+  });
 
-  res.json(uploadedChunks);
 });
 
-// 保存每个切片到服务器
-router.post('/upload', upload.single('chunk'), (req, res) => {
-  
-  const { fileName, chunkIndex } = req.body;
+router.post('/upload', uploadFileMulter.single('chunkBlob'), (req, res) => {
 
-  const chunk = req.file;
+  res.sendStatus(200)
 
-  const chunkDir = path.join(UPLOAD_DIR, `${fileName}_CHUNKS_FOLDER_MARK_`);
-
-  // 如果没有目录，则创建一个
-  if (!fs.existsSync(chunkDir)) fs.mkdirSync(chunkDir);
-
-  const chunkPath = path.join(chunkDir, `chunk_${chunkIndex}`);
-
-  fs.renameSync(chunk.path, chunkPath); // 将切片保存到对应路径
-
-  res.sendStatus(200);
 });
 
-// 合并切片文件
 router.post('/merge', (req, res) => {
 
-  const { fileName, totalChunks } = req.body;
+  const { filename } = req.body;
 
-  const chunkDir = path.join(UPLOAD_DIR, `${fileName}_CHUNKS_FOLDER_MARK_`);
+  const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
 
-  // 获取一个不重复的文件名
-  const uniqueFileName = getUniqueFileName(UPLOAD_DIR, fileName);
+  fs.readdir(chunkDir, (err, files) => {
 
-  const filePath = path.join(UPLOAD_DIR, uniqueFileName);
+    if (err) {
 
-  // 创建合并后的文件
-  const writeStream = fs.createWriteStream(filePath);
+      res.sendStatus(400).json({msg: '要合并的文件不存再'});
 
-  for (let i = 0; i < totalChunks; i++) {
+      return;
 
-    const chunkPath = path.join(chunkDir, `chunk_${i}`);
+    };
 
-    const chunk = fs.readFileSync(chunkPath);
+    const indexs = files.map(name => parseInt(name.split('_')[1]));
 
-    writeStream.write(chunk);
+    const indexsSort = indexs.sort((a,b) => a - b);
+  
+    const unqieFilename = getUnqieFilename(UPLOAD_DIR, filename);
+  
+    const writeStream = fs.createWriteStream(path.join(UPLOAD_DIR, unqieFilename));
+  
+    for (let index = 0; index < indexsSort.length; index++) {
+      
+      const chunkPath = path.join(chunkDir, `chunk_${index}`);
+  
+      const chunk = fs.readFileSync(chunkPath);
+  
+      writeStream.write(chunk);
+      
+    };
+  
+    writeStream.end();
+  
+    rimraf(chunkDir, { glob: false }).catch(err => {console.log('err:::', err)});
+  
+    res.sendStatus(200)
 
-    fs.unlinkSync(chunkPath);  // 合并后删除切片
+  });
 
-  }
+})
 
-  writeStream.end();
-
-  // 删除临时目录
-  fs.rmdirSync(chunkDir);
-
-  res.sendStatus(200);
-
-});
 
 module.exports = router;

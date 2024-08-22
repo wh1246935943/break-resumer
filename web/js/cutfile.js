@@ -1,62 +1,57 @@
-const CHUNK_SIZE = 1024 * 1024 * 5; // 5MB
+const CHUNK_SIZE = 1024 * 1024 * 5;
 
 const THREAD_COUNT = navigator.hardwareConcurrency || 4;
 
-export async function cutFile(file, uploadedChunkIndexs) {
+export function cutFile(file, uploadedChunks, callback) {
 
   return new Promise((resolve, reject) => {
     
-    const chunkCount = Math.ceil(file.size / CHUNK_SIZE);
+    const chunCount = Math.ceil(file.size / CHUNK_SIZE);
 
-    const threadChunkCounts = Math.ceil(chunkCount / THREAD_COUNT);
+    const threadChunkCount = Math.ceil(chunCount / THREAD_COUNT);
 
-    let finished = 0;
+    let createWorkerNumber = 0;
 
-    const result = [];
+    let closeWorkerNumber = 0;
 
-    for (let i = 0; i < THREAD_COUNT; i++) {
+    for (let index = 0; index < THREAD_COUNT; index++) {
+      
+      const start = index * threadChunkCount;
+      
+      let end = (index + 1) * threadChunkCount;
+      
+      if (end > chunCount) end = chunCount;
 
+      if (start >= end) continue;
+
+      createWorkerNumber++
+      
       const worker = new Worker('./../../web/js/worker.js');
-
-      let end = (i + 1) * threadChunkCounts;
-
-      const start = i * threadChunkCounts;
-
-      if (end > chunkCount) {
-
-        end = chunkCount;
-
-      }
-
-      worker.onerror = (err) => console.error('Worker error:', i, err);
+      
+      worker.onerror = (err) => console.log('worker error:::', index, err);
 
       worker.postMessage({
-        start,
-        end,
         file,
         CHUNK_SIZE,
-        uploadedChunkIndexs
+        start,
+        end,
+        uploadedChunks
       });
 
       worker.onmessage = (e) => {
 
-        for (let i = start; i < end; i++) {
+        if (e.data.isThreadDone) {
+          worker.terminate()
+          closeWorkerNumber++
+        };
 
-          result[i] = e.data[i - start];
+        if (e.data.isUploaded) return;
 
-        }
-
-        finished++;
-
-        worker.terminate();
-
-        if (finished === THREAD_COUNT) {
-
-          resolve(result)
-
-        }
-
-      };
+        callback(e.data, closeWorkerNumber === createWorkerNumber)
+        
+      }
+      
     }
+
   })
 }

@@ -1,29 +1,39 @@
-importScripts('./createchunk.js');
+importScripts('./createChunk.js');
 
 onmessage = async (e) => {
+  const { file, CHUNK_SIZE, start, end, uploadedChunks } = e.data;
 
-  const { start, end, file, CHUNK_SIZE, uploadedChunkIndexs } = e.data;
+  let doneNumber = 0
 
-  const result = [];
+  for (let index = start; index < end; index++) {
 
-  for (let i = start; i < end; i++) {
+    if (uploadedChunks.includes(index)) {
 
-    // 如果已经上传过这个切片，则跳过
-    if (uploadedChunkIndexs.includes(i)) {
-
-      result.push({
-        chunkIndex: i,
+      doneNumber++;
+  
+      postMessage({
+        isThreadDone: doneNumber === (end - start),
+        chunkIndex: index,
         isUploaded: true
-      });
+      })
 
-      continue
-    };
-    
-    result.push(createChunk(file, i, CHUNK_SIZE)) ;
-  }
+      continue;
+    }
 
-  const chunks = await Promise.all(result);
+    const res = await createChunk(file, index, CHUNK_SIZE);
 
-  postMessage(chunks);
+    doneNumber++;
 
+    if (doneNumber === (end - start)) {
+
+      res.isThreadDone = true
+
+    }
+
+    postMessage(res)
+  };
+
+  // const chunks = await Promise.all(result)
+
+  // postMessage(chunks)
 }

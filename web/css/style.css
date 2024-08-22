@@ -11,6 +11,12 @@
   }
 }
 
+ul, li{
+  list-style-type: none;
+  padding: 0; /* 去除ul的默认内边距 */
+  margin: 0; /* 去除ul的默认外边距 */
+}
+
 #loading {
   position: fixed;
   top: 0;
@@ -49,4 +55,49 @@
   background: white;
   margin: 0 5px;
   animation: loading 1s infinite;
+}
+
+.file-box{
+  width: 500px;
+  display: flex;
+  justify-content: space-between;
+}
+
+#file_list{
+  width: 500px;
+  position: relative;
+  min-height: 300px;
+  border: 1px dashed #696969;
+  margin-top: 20px;
+  max-height: 1000px;
+  overflow: hidden;
+  overflow-y: auto;
+  padding: 10px;
+  box-sizing: border-box;
+  .temp{
+    display: inline-block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #bfbfbf;
+  }
+  li{
+    padding: 10px 6px;
+    border: 1px dashed aqua;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    .pross{
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0;
+      background-color: aqua;
+      z-index: -1;
+      transition: all 0.2;
+    }
+  }
 }
