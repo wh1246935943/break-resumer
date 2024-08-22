@@ -10,7 +10,7 @@ const fs = require('fs');
 
 const { rimraf } = require('rimraf');
 
-const { getUnqieFilename } = require('./utils');
+const { getUniqueFileName } = require('./utils');
 
 const router = express.Router();
 
@@ -106,7 +106,7 @@ router.post('/merge', async (req, res) => {
       .map(name => parseInt(name.split('_')[1]))
       .sort((a, b) => a - b);
 
-    const uniqueFilename = getUnqieFilename(UPLOAD_DIR, filename);
+    const uniqueFilename = getUniqueFileName(UPLOAD_DIR, filename);
 
     const writeStream = fs.createWriteStream(path.join(UPLOAD_DIR, uniqueFilename));
 
