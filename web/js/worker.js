@@ -1,4 +1,4 @@
-importScripts('./createChunk.js');
+importScripts('./createchunk.js');
 
 onmessage = async (e) => {
   const { threadIndex, file, CHUNK_SIZE, start, end, uploadedChunks } = e.data;
