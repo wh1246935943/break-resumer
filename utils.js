@@ -44,7 +44,19 @@ async function removeDir(dir) {
   }
 }
 
+async function checkFileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    console.log('File exists');
+    return true;
+  } catch (error) {
+    console.log('File does not exist');
+    return false;
+  }
+}
+
 module.exports = {
   getUniqueFileName,
-  removeDir
+  removeDir,
+  checkFileExists
 }

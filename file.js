@@ -14,7 +14,24 @@ router.post('/upload', (req, res) => {
 
   const bb = busboy({ headers: req.headers });
 
-  let filename, chunkIndex, chunkBuffer;
+  let filename, chunkIndex, writeStream;
+
+  /**
+   * 请求中断时删除临时文件，
+   * 并关闭文件写入流
+   * 这个操作我不知道否合理，但是目前功能确实达到了我想要的效果
+   */
+  req.on('aborted', async () => {
+
+    const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+
+    const chunkPath = path.join(chunkDir, `chunk_${chunkIndex}.temp`);
+
+    await fsPromises.unlink(chunkPath);
+
+    writeStream.end();
+
+  });
   
   bb.on('field', (fieldname, val) => {
 
@@ -28,7 +45,7 @@ router.post('/upload', (req, res) => {
 
     const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
 
-    fs.mkdir(chunkDir, { recursive: true }, (err) => {
+    fs.mkdir(chunkDir, { recursive: true }, async (err) => {
 
       if (err) {
 
@@ -38,8 +55,21 @@ router.post('/upload', (req, res) => {
 
       const chunkPath = path.join(chunkDir, `chunk_${chunkIndex}.temp`);
       const finalChunkPath = path.join(chunkDir, `chunk_${chunkIndex}`);
+      /**
+       * 创建文件写入流时，检查是否存在同名的临时文件，如果存在则删除
+       * 为什么这里要删除呢？因为在上一次用户上传时，意外终止，而这个文件是写入了一部分内容的半成品
+       */
+      try {
+        
+        await fsPromises.access(chunkPath);
+        
+        await fsPromises.unlink(chunkPath);
 
-      const writeStream = fs.createWriteStream(chunkPath);
+      } catch (error) {
+        // 文件不存在，跳过
+      };
+
+      writeStream = fs.createWriteStream(chunkPath);
 
       file.pipe(writeStream);
 
