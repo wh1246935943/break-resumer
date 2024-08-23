@@ -39,11 +39,14 @@
 
   const inputLabelBtn = document.querySelector('#input_label_btn');
 
-  inputLabelBtn.addEventListener('click', () => {
+  // 
+  let concurrentRequests = 0;
 
-    fileInput.click();
+  const maxConcurrentRequests = 3;
 
-  });
+  const requestQueue = [];
+
+  inputLabelBtn.addEventListener('click', () => fileInput.click());
 
   fileInput.addEventListener('change', () => {
     // 清空文件列表
@@ -71,7 +74,8 @@
 
     const res = await fetch(`/file/getUploadedChunks?filename=${filename}`);
 
-    return res.json()
+    return res.json();
+
   }
 
   async function uploadFile() {
@@ -80,47 +84,65 @@
 
     if (!files.length) {
 
-      showLoading('请选择一个文件', 2000)
+      showLoading('请选择一个文件', 2000);
 
-      return
+      return;
+
     };
 
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+
       const file = files[fileIndex];
-      
+
       const uploadedChunks = await getUploadedChunks(file.name);
-  
+
       const fromCutFileChunks = [];
-  
+
       await cutFile(file, uploadedChunks, ({chunkIndex, chunkHash, chunkBlob, isUploaded}, chunkCount) => {
-  
+
         fromCutFileChunks.push({chunkIndex, chunkHash, chunkBlob, isUploaded});
 
         if (isMergeChunks(fromCutFileChunks, chunkCount)) {
-          
-          mergeChunks(file.name, fileIndex)
+
+          mergeChunks(file.name, fileIndex);
 
           return;
-        }
-  
-        uploadChunk(chunkIndex, chunkHash, chunkBlob, file.name, chunkCount, fromCutFileChunks, fileIndex)
-      })
-    
-    }
 
+        }
+
+        requestQueue.push(() => uploadChunk(chunkIndex, chunkHash, chunkBlob, file.name, chunkCount, fromCutFileChunks, fileIndex));
+
+        processQueue();
+      });
+    }
   }
 
   function calculateUploadedPercentage(chunks) {
-    // 计算已上传的数据数量
+
     const uploadedCount = chunks.filter(chunk => chunk.isUploaded).length;
     
-    // 计算总数据数量
     const totalCount = chunks.length;
 
-    // 计算已上传数据的占比
     const uploadedPercentage = (uploadedCount / totalCount) * 100;
 
-    return uploadedPercentage.toFixed(2); // 保留两位小数
+    return uploadedPercentage.toFixed(2);
+
+  }
+
+  async function processQueue() {
+
+    if (concurrentRequests >= maxConcurrentRequests || requestQueue.length === 0) return;
+
+    const nextRequest = requestQueue.shift();
+
+    concurrentRequests++;
+
+    await nextRequest();
+
+    concurrentRequests--;
+
+    processQueue();
+
   }
 
   async function uploadChunk(chunkIndex, chunkHash, chunkBlob, filename, chunkCount, chunks, fileIndex) {
@@ -139,7 +161,7 @@
     });
 
     if (!res.ok) {
-      console.log('分片上传失败了')
+      console.log('分片上传失败了');
       return;
     };
 
@@ -153,11 +175,10 @@
 
     prossList[fileIndex].style.width = `${percentage}%`;
 
-    if (isMergeChunks(chunks, chunkCount)) mergeChunks(filename, fileIndex)
-
+    if (isMergeChunks(chunks, chunkCount)) mergeChunks(filename, fileIndex);
   };
 
-  function isMergeChunks(chunks, chunkCount, ) {
+  function isMergeChunks(chunks, chunkCount) {
 
     if (chunks.length === chunkCount) {
 
@@ -168,10 +189,10 @@
     };
 
     return false;
+
   }
 
   async function mergeChunks(filename, fileIndex) {
-
     const res = await fetch('/file/merge', {
       method: 'POST',
       headers: {
@@ -182,14 +203,12 @@
 
     if (!res.ok) {
       const data = await res.json();
-      showLoading(data.msg, 2000)
+      showLoading(data.msg, 2000);
       return;
     };
 
     const prossList = document.querySelectorAll('#file_list li .pross');
-
     prossList[fileIndex].style.width = `${100}%`;
-
   }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
