@@ -1,52 +1,136 @@
 const express = require('express');
-
-const multer = require('multer');
-
+const busboy = require('busboy');
 const fsPromises = require('fs').promises;
-
 const path = require('path');
-
 const fs = require('fs');
-
 const { rimraf } = require('rimraf');
-
 const { getUniqueFileName } = require('./utils');
 
 const router = express.Router();
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
-// 设置 multer 存储配置
-const uploadFileStorage = multer.diskStorage({
-  // 动态设置文件保存路径
-  destination: (req, file, cb) => {
+router.post('/upload', (req, res) => {
 
-    const filename = req.body.filename || 'default';
+  const bb = busboy({ headers: req.headers });
 
-    const chunkMulterDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_MULTER_FOLDER_MARK_`);
+  let filename, chunkIndex, chunkBuffer;
+  
+  bb.on('field', (fieldname, val) => {
 
-    fs.mkdir(chunkMulterDir, { recursive: true }, (err) => {
+    if (fieldname === 'filename') filename = val;
 
-      if (err) return cb(err);
+    if (fieldname === 'chunkIndex') chunkIndex = parseInt(val, 10);
 
-      cb(null, chunkMulterDir);
+  });
+
+  bb.on('file', (fieldname, file) => {
+
+    const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+
+    fs.mkdir(chunkDir, { recursive: true }, (err) => {
+
+      if (err) {
+
+        return res.status(500).json({ msg: '无法创建文件夹', error: err.message });
+
+      };
+
+      const chunkPath = path.join(chunkDir, `chunk_${chunkIndex}.temp`);
+      const finalChunkPath = path.join(chunkDir, `chunk_${chunkIndex}`);
+
+      const writeStream = fs.createWriteStream(chunkPath);
+
+      file.pipe(writeStream);
+
+      writeStream.on('close', () => {
+        
+        fs.rename(chunkPath, finalChunkPath, (err) => {
+
+          if (err) return res.status(500).json({ msg: '无法重命名文件', error: err.message });
+
+          res.sendStatus(200);
+
+        });
+        
+      });
+
+      writeStream.on('error', (error) => {
+
+        res.status(500).json({ msg: '保存文件块时出错', error: error.message });
+
+      });
+      
+    });
+
+  });
+
+  req.pipe(bb);
+});
+
+// Merge handler
+router.post('/merge', async (req, res) => {
+
+  const { filename } = req.body;
+
+  const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
+
+  try {
+    const files = await fsPromises.readdir(chunkDir);
+
+    const indexsSort = files
+      .filter(name => !name.endsWith('.temp'))
+      .map(name => parseInt(name.split('_')[1]))
+      .sort((a, b) => a - b);
+
+    const uniqueFilename = getUniqueFileName(UPLOAD_DIR, filename);
+
+    const writeStream = fs.createWriteStream(path.join(UPLOAD_DIR, uniqueFilename));
+
+    for (let i = 0; i < indexsSort.length; i++) {
+
+      const chunkPath = path.join(chunkDir, `chunk_${indexsSort[i]}`);
+
+      const chunk = await fsPromises.readFile(chunkPath);
+
+      await new Promise((resolve, reject) => {
+
+        writeStream.write(chunk, err => {
+
+          if (err) reject(err);
+
+          else resolve();
+
+        });
+
+      });
+
+    }
+
+    await new Promise((resolve, reject) => {
+
+      writeStream.end(err => {
+
+        if (err) reject(err);
+
+        else resolve();
+
+      });
 
     });
 
-  },
+    await rimraf(chunkDir, { glob: false });
 
-  // 设置保存的文件名
-  filename: (req, file, cb) => {
+    res.sendStatus(200);
 
-    const chunkIndex = req.body.chunkIndex || 0;
+  } catch (err) {
 
-    // 自定义文件名，例如使用原文件名
-    cb(null, `chunk_${chunkIndex}`);
+    res.status(500).json({ msg: '合并文件时出错', error: err.message });
+
   }
 });
 
-const uploadFileMulter = multer({ storage: uploadFileStorage });
-
+// Helper function to get uploaded chunks
 router.get('/getUploadedChunks', (req, res) => {
 
   const { filename } = req.query;
@@ -57,93 +141,20 @@ router.get('/getUploadedChunks', (req, res) => {
 
     if (err) {
 
-      res.json([])
+      res.json([]);
 
     } else {
 
-      res.json(files.map(name => parseInt(name.split('_')[1])))
+      res.json(
+        files
+          .filter(name => !name.endsWith('.temp'))
+          .map(name => parseInt(name.split('_')[1]))
+      );
 
     }
 
   });
 
 });
-
-router.post('/upload', uploadFileMulter.single('chunkBlob'), (req, res) => {
-
-  const { filename, chunkIndex } = req.body;
-
-  const multerChunk = req.file;
-
-  const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
-
-  // 如果没有目录，则创建一个
-  fs.mkdir(chunkDir, { recursive: true }, (err) => {
-
-    if (err) return;
-
-    fs.rename(multerChunk.path, path.join(chunkDir, `chunk_${chunkIndex}`), () => {
-
-      res.sendStatus(200)
-
-    });
-  })
-
-});
-
-router.post('/merge', async (req, res) => {
-
-  const { filename } = req.body;
-
-  const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
-  const chunkMulterDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_MULTER_FOLDER_MARK_`);
-
-  try {
-    // 读取chunk目录下的文件列表
-    const files = await fsPromises.readdir(chunkDir);
-
-    const indexsSort = files
-      .map(name => parseInt(name.split('_')[1]))
-      .sort((a, b) => a - b);
-
-    const uniqueFilename = getUniqueFileName(UPLOAD_DIR, filename);
-
-    const writeStream = fs.createWriteStream(path.join(UPLOAD_DIR, uniqueFilename));
-
-    for (let i = 0; i < indexsSort.length; i++) {
-      const chunkPath = path.join(chunkDir, `chunk_${indexsSort[i]}`);
-
-      // 异步读取文件
-      const chunk = await fsPromises.readFile(chunkPath);
-
-      // 异步写入文件
-      await new Promise((resolve, reject) => {
-        writeStream.write(chunk, err => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-    }
-
-    // 确保所有数据写入完成
-    await new Promise((resolve, reject) => {
-      writeStream.end(err => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    // 删除目录及其内容
-    await rimraf(chunkDir, { glob: false });
-    await rimraf(chunkMulterDir, { glob: false });
-
-    res.sendStatus(200);
-
-  } catch (err) {
-    res.status(500).json({ msg: '合并文件时出错', error: err.message });
-  }
-});
-
-
 
 module.exports = router;
