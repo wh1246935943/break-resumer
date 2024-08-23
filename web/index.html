@@ -89,16 +89,21 @@
       const file = files[fileIndex];
       
       const uploadedChunks = await getUploadedChunks(file.name);
+  
+      const fromCutFileChunks = [];
+  
+      await cutFile(file, uploadedChunks, ({chunkIndex, chunkHash, chunkBlob, isUploaded}, chunkCount) => {
+  
+        fromCutFileChunks.push({chunkIndex, chunkHash, chunkBlob, isUploaded});
 
-      console.log(file.name, uploadedChunks)
+        if (isMergeChunks(fromCutFileChunks, chunkCount)) {
+          
+          mergeChunks(file.name, fileIndex)
+
+          return;
+        }
   
-      const needUploadChunks = [];
-  
-      cutFile(file, uploadedChunks, ({chunkIndex, chunkHash, chunkBlob, isUploaded}, isMerge) => {
-  
-        needUploadChunks.push({chunkIndex, chunkHash, chunkBlob, isUploaded});
-  
-        uploadChunk(chunkIndex, chunkHash, chunkBlob, file.name, isMerge, needUploadChunks, fileIndex)
+        uploadChunk(chunkIndex, chunkHash, chunkBlob, file.name, chunkCount, fromCutFileChunks, fileIndex)
       })
     
     }
@@ -118,7 +123,9 @@
     return uploadedPercentage.toFixed(2); // 保留两位小数
   }
 
-  async function uploadChunk(chunkIndex, chunkHash, chunkBlob, filename, isMerge, chunks, fileIndex) {
+  async function uploadChunk(chunkIndex, chunkHash, chunkBlob, filename, chunkCount, chunks, fileIndex) {
+
+    if (!chunkBlob) return;
 
     const formData = new FormData();
     formData.append('chunkIndex', chunkIndex);
@@ -146,12 +153,24 @@
 
     prossList[fileIndex].style.width = `${percentage}%`;
 
-    const isAllUploaded = chunks.every(({isUploaded}) => isUploaded);
+    if (isMergeChunks(chunks, chunkCount)) mergeChunks(filename, fileIndex)
 
-    if (isAllUploaded) mergeChunks(filename)
   };
 
-  async function mergeChunks(filename) {
+  function isMergeChunks(chunks, chunkCount, ) {
+
+    if (chunks.length === chunkCount) {
+
+      const isAllUploaded = chunks.every(({isUploaded}) => isUploaded);
+
+      return isAllUploaded;
+
+    };
+
+    return false;
+  }
+
+  async function mergeChunks(filename, fileIndex) {
 
     const res = await fetch('/file/merge', {
       method: 'POST',
@@ -161,12 +180,15 @@
       body: JSON.stringify({filename})
     });
 
-    const data = await res.json();
-
     if (!res.ok) {
+      const data = await res.json();
       showLoading(data.msg, 2000)
       return;
     };
+
+    const prossList = document.querySelectorAll('#file_list li .pross');
+
+    prossList[fileIndex].style.width = `${100}%`;
 
   }
 </script>

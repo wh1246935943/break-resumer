@@ -1,7 +1,11 @@
 importScripts('./createChunk.js');
 
 onmessage = async (e) => {
-  const { file, CHUNK_SIZE, start, end, uploadedChunks } = e.data;
+  const { threadIndex, file, CHUNK_SIZE, start, end, uploadedChunks } = e.data;
+
+  console.log('open thread index:::', threadIndex);
+
+  console.log('start:::', start, end);
 
   let doneNumber = 0
 
@@ -20,6 +24,7 @@ onmessage = async (e) => {
       continue;
     }
 
+    console.log('createChunk:::');
     const res = await createChunk(file, index, CHUNK_SIZE);
 
     doneNumber++;
@@ -32,8 +37,4 @@ onmessage = async (e) => {
 
     postMessage(res)
   };
-
-  // const chunks = await Promise.all(result)
-
-  // postMessage(chunks)
 }

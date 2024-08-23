@@ -6,13 +6,9 @@ export function cutFile(file, uploadedChunks, callback) {
 
   return new Promise((resolve, reject) => {
     
-    const chunCount = Math.ceil(file.size / CHUNK_SIZE);
+    const chunkCount = Math.ceil(file.size / CHUNK_SIZE);
 
-    const threadChunkCount = Math.ceil(chunCount / THREAD_COUNT);
-
-    let createWorkerNumber = 0;
-
-    let closeWorkerNumber = 0;
+    const threadChunkCount = Math.ceil(chunkCount / THREAD_COUNT);
 
     for (let index = 0; index < THREAD_COUNT; index++) {
       
@@ -20,17 +16,16 @@ export function cutFile(file, uploadedChunks, callback) {
       
       let end = (index + 1) * threadChunkCount;
       
-      if (end > chunCount) end = chunCount;
+      if (end > chunkCount) end = chunkCount;
 
       if (start >= end) continue;
-
-      createWorkerNumber++
       
       const worker = new Worker('./../../web/js/worker.js');
       
       worker.onerror = (err) => console.log('worker error:::', index, err);
 
       worker.postMessage({
+        threadIndex: index,
         file,
         CHUNK_SIZE,
         start,
@@ -41,13 +36,12 @@ export function cutFile(file, uploadedChunks, callback) {
       worker.onmessage = (e) => {
 
         if (e.data.isThreadDone) {
-          worker.terminate()
-          closeWorkerNumber++
+          console.log('close thread index:::', index)
+          worker.terminate();
+          resolve()
         };
 
-        if (e.data.isUploaded) return;
-
-        callback(e.data, closeWorkerNumber === createWorkerNumber)
+        callback(e.data, chunkCount)
         
       }
       
