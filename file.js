@@ -39,9 +39,22 @@ router.post('/upload', (req, res) => {
 
     if (fieldname === 'chunkIndex') chunkIndex = parseInt(val, 10);
 
+    if (fieldname === 'chunkBlob' && value === 'undefined') {
+
+      res.status(400).json({msg: '文件切片数据不存在'})
+
+    }
+
   });
 
   bb.on('file', (fieldname, file) => {
+
+    if (!file) {
+
+      res.status(400).json({msg: '文件切片数据不存在'})
+
+      return;
+    }
 
     const chunkDir = path.join(UPLOAD_DIR, `${filename}_CHUNKS_FOLDER_MARK_`);
 
@@ -54,20 +67,6 @@ router.post('/upload', (req, res) => {
       };
 
       const chunkPath = path.join(chunkDir, `chunk_${chunkIndex}`);
-      // const finalChunkPath = path.join(chunkDir, `chunk_${chunkIndex}`);
-      /**
-       * 创建文件写入流时，检查是否存在同名的临时文件，如果存在则删除
-       * 为什么这里要删除呢？因为在上一次用户上传时，意外终止，而这个文件是写入了一部分内容的半成品
-       */
-      // try {
-        
-      //   await fsPromises.access(chunkPath);
-        
-      //   await fsPromises.unlink(chunkPath);
-
-      // } catch (error) {
-      //   // 文件不存在，跳过
-      // };
 
       writeStream = fs.createWriteStream(chunkPath);
 
@@ -76,14 +75,6 @@ router.post('/upload', (req, res) => {
       writeStream.on('close', () => {
 
         res.sendStatus(200);
-        
-        // fs.rename(chunkPath, finalChunkPath, (err) => {
-
-        //   if (err) return res.status(500).json({ msg: '无法重命名文件', error: err.message });
-
-        //   res.sendStatus(200);
-
-        // });
         
       });
 
